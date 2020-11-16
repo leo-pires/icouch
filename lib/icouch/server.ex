@@ -77,9 +77,9 @@ defmodule ICouch.Server do
   def send_req(%__MODULE__{} = server, endpoint, method \\ :get, body_term \\ nil) do
     has_body = body_term != nil && method_allows_body(method)
     headers = [{"Accept", "application/json"}] ++ (if has_body, do: [{"Content-Type", "application/json"}], else: [])
-    case send_raw_req(server, endpoint, method, (if has_body, do: Poison.encode!(body_term)), headers) do
+    case send_raw_req(server, endpoint, method, (if has_body, do: Jason.encode!(body_term)), headers) do
       {:ok, {_, response_body}} ->
-        Poison.decode(response_body)
+        Jason.decode(response_body)
       other ->
         other
     end
@@ -258,5 +258,5 @@ defmodule ICouch.Server do
   defp parse_endpoint_options({key, value} = pair, acc) when key in [:rev, :filter, :view, :since, :startkey_docid, :endkey_docid] or is_atom(value),
     do: [pair | acc]
   defp parse_endpoint_options({key, value}, acc),
-    do: [{key, Poison.encode!(value)} | acc]
+    do: [{key, Jason.encode!(value)} | acc]
 end

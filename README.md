@@ -11,7 +11,7 @@
 ICouch is a CouchDB client for Elixir using [ibrowse][ibrowse]
 for HTTP transfer.
 
-JSON encoding/decoding is provided by [Poison][poison].
+JSON encoding/decoding is provided by [Jason][jason].
 
 ICouch claims to be more "Elixir Style" than other implementations based on
 couchbeam and offers a more rigid changes follower tested against vanilla
@@ -62,4 +62,4 @@ ICouch source code is released under Apache 2 License.
 Check the [LICENSE](LICENSE) file for more information.
 
 [ibrowse]: https://hex.pm/packages/ibrowse
-[poison]: https://hex.pm/packages/poison
+[jason]: https://hex.pm/packages/jason

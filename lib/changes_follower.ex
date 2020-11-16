@@ -270,7 +270,7 @@ defmodule ChangesFollower do
       blocks
         |> Enum.filter(&String.length(&1) > 0)
         |> Enum.reverse()
-        |> Enum.map(&Poison.decode!/1)
+        |> Enum.map(&Jason.decode!/1)
         |> case do
           [] -> {:empty, buffer}
           [%{"error" => error} = change | _] -> {:error, error, change["reason"]}
@@ -280,7 +280,7 @@ defmodule ChangesFollower do
       end
     else
       chunk
-        |> Poison.decode!()
+        |> Jason.decode!()
         |> case do
           %{"error" => error} = change ->
             {:error, error, change["reason"]}
@@ -417,9 +417,9 @@ defmodule ChangesFollower do
     ib_options = [stream_to: self(), stream_chunk_size: :infinity] ++ (if query[:feed] == :continuous, do: [stream_full_chunks: true], else: [])
     {query, method, body, headers} = case query do
       %{doc_ids: doc_ids} ->
-        {Map.delete(query, :doc_ids) |> Map.put(:filter, "_doc_ids"), :post, Poison.encode!(%{"doc_ids" => doc_ids}), [{"Content-Type", "application/json"}, {"Accept", "application/json"}]}
+        {Map.delete(query, :doc_ids) |> Map.put(:filter, "_doc_ids"), :post, Jason.encode!(%{"doc_ids" => doc_ids}), [{"Content-Type", "application/json"}, {"Accept", "application/json"}]}
       %{selector: selector} ->
-        {Map.delete(query, :selector) |> Map.put(:filter, "_selector"), :post, Poison.encode!(%{"selector" => selector}), [{"Content-Type", "application/json"}, {"Accept", "application/json"}]}
+        {Map.delete(query, :selector) |> Map.put(:filter, "_selector"), :post, Jason.encode!(%{"selector" => selector}), [{"Content-Type", "application/json"}, {"Accept", "application/json"}]}
       _ ->
         {query, :get, nil, [{"Accept", "application/json"}]}
     end

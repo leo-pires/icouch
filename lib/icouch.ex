@@ -471,8 +471,8 @@ defmodule ICouch do
     case ICouch.DB.send_raw_req(db, doc_id, :head) do
       {:ok, {headers, _}} ->
         case Enum.find_value(headers, fn
-              {key, value} when is_list(key) -> :string.to_lower(key) == 'etag' && Poison.decode(value)
-              {key, value} when is_binary(key) -> String.downcase(key) == "etag" && Poison.decode(value)
+              {key, value} when is_list(key) -> :string.to_lower(key) == 'etag' && Jason.decode(value)
+              {key, value} when is_binary(key) -> String.downcase(key) == "etag" && Jason.decode(value)
             end) do
           {:ok, _} = result -> result
           _ -> {:error, :invalid_response}
@@ -537,7 +537,7 @@ defmodule ICouch do
   """
   @spec open_docs(db :: ICouch.DB.t, doc_ids_revs :: [String.t | {String.t, String.t} | {String.t, String.t, String.t} | map], options :: [open_docs_option]) :: {:ok, [Document.t]} | {:error, term}
   def open_docs(db, doc_ids_revs, options \\ []) do
-    post_body = Poison.encode!(%{"docs" => Enum.map(doc_ids_revs, fn
+    post_body = Jason.encode!(%{"docs" => Enum.map(doc_ids_revs, fn
       entry when is_map(entry) ->
         entry
       doc_id when is_binary(doc_id) ->
@@ -602,7 +602,7 @@ defmodule ICouch do
           body = ICouch.Multipart.join(parts, boundary)
           case ICouch.DB.send_raw_req(db, {doc_id, options}, :put, body, [{"Content-Type", "multipart/related; boundary=\"#{boundary}\""}]) do
             {:ok, {_, body}} ->
-              case Poison.decode(body) do
+              case Jason.decode(body) do
                 {:ok, %{"rev" => new_rev}} ->
                   {:ok, Document.set_rev(doc, new_rev)}
                 _ ->
@@ -692,7 +692,7 @@ defmodule ICouch do
         src_doc_id
     end
     case ICouch.DB.send_raw_req(db, {src_doc_id, options}, :copy, nil, [{"Destination", dest_doc_id}]) do
-      {:ok, {_, body}} -> Poison.decode(body)
+      {:ok, {_, body}} -> Jason.decode(body)
       other -> other
     end
   end
@@ -901,7 +901,7 @@ defmodule ICouch do
     end
     case ICouch.DB.send_raw_req(db, {"#{doc_id}/#{URI.encode(filename)}", options}, :put, body, headers) do
       {:ok, {_, body}} ->
-        Poison.decode(body)
+        Jason.decode(body)
       other ->
         other
     end
@@ -1016,7 +1016,7 @@ defmodule ICouch do
     |>
     case do
       {:ok, dec_body} ->
-        Poison.decode(dec_body)
+        Jason.decode(dec_body)
       other ->
         other
     end

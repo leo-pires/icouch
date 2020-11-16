@@ -91,15 +91,15 @@ defmodule Mix.Tasks.Icouch.Backup do
 
   defp store_blanky(source_db, doc_id, doc_rev, target_path) do
     doc = ICouch.open_doc!(source_db, doc_id, rev: doc_rev, attachments: true, multipart: false, revs: true)
-    File.write!(target_path, Poison.encode!(doc))
+    File.write!(target_path, Jason.encode!(doc))
   end
 
   def save_bulk_docs(docs_order, docs_by_id, bulk_file_path) do
     Logger.info("Saving...")
     [first_doc_id | r_docs_order] = Enum.reverse(docs_order)
 
-    [@backup_header, Poison.encode!(docs_by_id[first_doc_id])]
-      |> Stream.concat( Stream.flat_map(r_docs_order, &[",\n", Poison.encode!(docs_by_id[&1])]) )
+    [@backup_header, Jason.encode!(docs_by_id[first_doc_id])]
+      |> Stream.concat( Stream.flat_map(r_docs_order, &[",\n", Jason.encode!(docs_by_id[&1])]) )
       |> Stream.concat(["\n]}\n"])
       |> Stream.into(File.stream!(bulk_file_path))
       |> Stream.run()
@@ -215,7 +215,7 @@ defmodule Mix.Tasks.Icouch.Backup do
         {docs_by_id, _} = Enum.reduce(new_doc_revs, {docs_by_id, 1}, fn {doc_id, doc_rev}, {acc, i_revs} ->
           Logger.info("- #{progress_string(i_revs, n_revs)} #{doc_id} @ #{doc_rev}")
           doc = ICouch.open_doc!(source_db, doc_id, rev: doc_rev, revs: true)
-          IO.binwrite(nr_temp, Poison.encode!(doc) <> "\n")
+          IO.binwrite(nr_temp, Jason.encode!(doc) <> "\n")
           {Map.put(acc, doc_id, doc), i_revs + 1}
         end)
         File.close(nr_temp)

@@ -2,6 +2,14 @@
 # Created by Patrick Schneider on 23.08.2017.
 # Copyright (c) 2017,2018 MeetNow! GmbH
 
+defmodule ICouch.DocumentWrapEncodeMultipart do
+  @moduledoc false
+  # Module for encoding multipart
+
+  @enforce_keys [:wrap]
+  defstruct [:wrap]
+end
+
 defmodule ICouch.Document do
   @moduledoc """
   Module which handles CouchDB documents.
@@ -58,7 +66,7 @@ defmodule ICouch.Document do
   """
   @spec from_api(fields :: map | binary) :: {:ok, t} | :error
   def from_api(doc) when is_binary(doc) do
-    case Poison.decode(doc) do
+    case Jason.decode(doc) do
       {:ok, fields} -> from_api(fields)
       other -> other
     end
@@ -75,7 +83,7 @@ defmodule ICouch.Document do
   """
   @spec from_api!(fields :: map | binary) :: t
   def from_api!(doc) when is_binary(doc),
-    do: from_api!(Poison.decode!(doc))
+    do: from_api!(Jason.decode!(doc))
   def from_api!(fields) when is_map(fields) do
     {:ok, doc} = from_api(fields)
     doc
@@ -132,16 +140,16 @@ defmodule ICouch.Document do
   at which point the attachments that have data are marked with
   `"follows": true`. The attachment order is maintained.
   """
-  @spec to_api(doc :: t, options :: [any]) :: {:ok, binary} | {:error, term}
-  def to_api(doc, options \\ []),
-    do: Poison.encode(doc, options)
+  @spec to_api(doc :: t) :: {:ok, binary} | {:error, term}
+  def to_api(doc),
+    do: Jason.encode(doc)
 
   @doc """
   Like `to_api/1` but raises an error on encoding failures.
   """
-  @spec to_api!(doc :: t, options :: [any]) :: binary
-  def to_api!(doc, options \\ []),
-    do: Poison.encode!(doc, options)
+  @spec to_api!(doc :: t) :: binary
+  def to_api!(doc),
+    do: Jason.encode!(doc)
 
   @doc """
   Serializes the given document including its attachment data to a list of
@@ -149,7 +157,7 @@ defmodule ICouch.Document do
   """
   @spec to_multipart(doc :: t) :: {:ok, [{map, binary}]} | :error
   def to_multipart(doc) do
-    case to_api(doc, multipart: true) do
+    case Jason.encode(%ICouch.DocumentWrapEncodeMultipart{wrap: doc}) do
       {:ok, doc_body} ->
         {:ok, [
           {%{"Content-Type" => "application/json"}, doc_body} |
@@ -672,67 +680,54 @@ defimpl Collectable, for: ICouch.Document do
   end
 end
 
-defimpl Poison.Encoder, for: ICouch.Document do
-  @compile :inline_list_funcs
+defmodule ICouch.JsonEncodingHelper do
+  @moduledoc false
 
-  alias Poison.Encoder
+  alias Jason.Encode
 
-  use Poison.{Encode, Pretty}
-
-  def encode(%ICouch.Document{fields: %{"_attachments" => doc_atts}, attachment_order: []}, _) when map_size(doc_atts) > 0,
+  def encode_document(%ICouch.Document{fields: %{"_attachments" => doc_atts}, attachment_order: []}, _options, _multipart) when map_size(doc_atts) > 0,
     do: raise ArgumentError, message: "document attachments inconsistent"
-  def encode(%ICouch.Document{fields: %{"_attachments" => doc_atts} = fields, attachment_order: [_|_] = order, attachment_data: data}, options) do
+  def encode_document(%ICouch.Document{fields: %{"_attachments" => doc_atts} = fields, attachment_order: [_|_] = order, attachment_data: data}, options, multipart) do
     if length(order) != map_size(doc_atts),
       do: raise ArgumentError, message: "document attachments inconsistent"
-
-    pretty = pretty(options)
-    if pretty do
-      indent = indent(options)
-      offset = offset(options) + indent
-      options = offset(options, offset)
-
-      fun = &[",\n", spaces(offset), Encoder.BitString.encode(encode_name(&1), options), ": ",
-              encode_field_value(&1, :maps.get(&1, fields), order, data, pretty, options) | &2]
-      ["{\n", tl(:lists.foldl(fun, [], :maps.keys(fields))), ?\n, spaces(offset - indent), ?}]
-    else
-      fun = &[?,, Encoder.BitString.encode(encode_name(&1), options), ?:,
-              encode_field_value(&1, :maps.get(&1, fields), order, data, pretty, options) | &2]
-      [?{, tl(:lists.foldl(fun, [], :maps.keys(fields))), ?}]
-    end
+    # fun = &[?,, Encode.string(&1, options), ?:,
+    #         encode_field_value(&1, :maps.get(&1, fields), order, data, options, multipart) | &2]
+    fun = &[?,, Encode.string(&1, options), ?:,
+            encode_field_value(&1, Map.get(fields, &1), order, data, options, multipart) | &2]
+    [?{, tl(:lists.foldl(fun, [], :maps.keys(fields))), ?}]
   end
-  def encode(%ICouch.Document{fields: fields}, options),
-    do: Poison.Encoder.Map.encode(fields, options)
+  def encode_document(%ICouch.Document{fields: fields}, options, _multipart),
+    do: Encode.map(fields, options)
 
-  defp encode_field_value("_attachments", doc_atts, order, data, true, options) do
-    multipart = multipart(options)
-    indent = indent(options)
-    offset = offset(options) + indent
-    options = offset(options, offset)
-
-    fun = &[",\n", spaces(offset), Encoder.BitString.encode(encode_name(&1), options), ": ",
-            encode_attachment(:maps.get(&1, doc_atts), :maps.find(&1, data), multipart, options) | &2]
-    ["{\n", tl(:lists.foldr(fun, [], order)), ?\n, spaces(offset - indent), ?}]
-  end
-  defp encode_field_value("_attachments", doc_atts, order, data, _, options) do
-    multipart = multipart(options)
-    fun = &[?,, Encoder.BitString.encode(encode_name(&1), options), ?:,
-            encode_attachment(:maps.get(&1, doc_atts), :maps.find(&1, data), multipart, options) | &2]
+  defp encode_field_value("_attachments", doc_atts, order, data, options, multipart) do
+    # fun = &[?,, Encode.string(&1, options), ?:,
+    #         encode_attachment(:maps.get(&1, doc_atts), :maps.find(&1, data), options, multipart) | &2]
+    fun = &[?,, Encode.string(&1, options), ?:,
+    encode_attachment(Map.get(doc_atts, &1), Map.fetch(data, &1), options, multipart) | &2]
     [?{, tl(:lists.foldr(fun, [], order)), ?}]
   end
-  defp encode_field_value(_, value, _, _, _, options),
-    do: Encoder.encode(value, options)
+  defp encode_field_value(_, value, _order, _data, options, _multipart),
+    do: Jason.Encoder.encode(value, options)
 
-  defp encode_attachment(att, {:ok, _}, true, options),
-    do: Encoder.Map.encode(att |> Map.delete("stub") |> Map.put("follows", true), options)
-  defp encode_attachment(att, {:ok, data}, _, options),
-    do: Encoder.Map.encode(att |> Map.delete("stub") |> Map.delete("length") |> Map.put("data", Base.encode64(data)), options)
-  defp encode_attachment(att, _, _, options),
-    do: Encoder.Map.encode(att, options)
+  defp encode_attachment(att, {:ok, _}, options, true),
+    do: Encode.map(att |> Map.delete("stub") |> Map.put("follows", true), options)
+  defp encode_attachment(att, {:ok, data}, options, _multipart),
+    do: Encode.map(att |> Map.delete("stub") |> Map.delete("length") |> Map.put("data", Base.encode64(data)), options)
+  defp encode_attachment(att, _result, options, _multipart),
+    do: Encode.map(att, options)
+end
 
-  defp multipart(options) do
-    case Access.fetch(options, :multipart) do
-      :error -> false
-      {:ok, v} -> v
-    end
+defimpl Jason.Encoder, for: ICouch.Document do
+  @compile :inline_list_funcs
+
+  def encode(%ICouch.Document{} = doc, options), do:
+    ICouch.JsonEncodingHelper.encode_document(doc, options, false)
+end
+
+defimpl Jason.Encoder, for: ICouch.DocumentWrapEncodeMultipart do
+  @compile :inline_list_funcs
+
+  def encode(%{wrap: %ICouch.Document{} =  doc}, options) do
+    ICouch.JsonEncodingHelper.encode_document(doc, options, true)
   end
 end
